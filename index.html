@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -23,7 +24,7 @@
             padding: 20px;
             color: var(--text);
             background-color: var(--bg);
-            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4af37' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4af37' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2v-4h4v-2h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
         }
 
         .container {
@@ -67,7 +68,7 @@
         h3 { color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 
         /* จัดการการแสดงผลตามสิทธิ์ */
-        .admin-only { display: block; } 
+        .admin-only { display: block; }
 
         .section { margin-bottom: 25px; }
         .input-group { display: flex; gap: 10px; margin-bottom: 10px; }
@@ -91,6 +92,7 @@
         .summary-box { background: linear-gradient(145deg, rgba(212, 175, 55, 0.1), transparent); padding: 15px; border-radius: 10px; border: 1px solid rgba(212, 175, 55, 0.2); }
         .total-row { display: flex; justify-content: space-between; font-weight: bold; color: var(--primary); font-size: 1.2em; }
         .person-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+        .btn-tool:disabled { opacity: .38; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -100,6 +102,8 @@
         <div style="display:flex; gap:5px">
             <button class="btn-tool admin-only" onclick="saveToFile()">💾 บันทึก</button>
             <button class="btn-tool admin-only" onclick="document.getElementById('fileInput').click()">📂 เปิด</button>
+            <button id="undoBtn" class="btn-tool admin-only" onclick="undo()" disabled title="ย้อนกลับการเปลี่ยนแปลงล่าสุด">↶ ย้อนกลับ</button>
+            <button id="redoBtn" class="btn-tool admin-only" onclick="redo()" disabled title="ทำซ้ำการเปลี่ยนแปลงที่ย้อนไป">↷ ไปข้างหน้า</button>
         </div>
         <button class="btn-tool btn-share admin-only" onclick="generateShareLink()">🔗 ส่งลิงก์ให้เพื่อน</button>
     </div>
@@ -142,6 +146,44 @@
     let friends = [];
     let foodItems = [];
     let isReadOnly = false;
+    const undoStack = [];
+    const redoStack = [];
+    const HISTORY_LIMIT = 100;
+
+    function snapshot() {
+        return JSON.stringify({ friends, foodItems });
+    }
+
+    function updateHistoryButtons() {
+        document.getElementById('undoBtn').disabled = isReadOnly || undoStack.length === 0;
+        document.getElementById('redoBtn').disabled = isReadOnly || redoStack.length === 0;
+    }
+
+    function recordChange() {
+        if (isReadOnly) return;
+        undoStack.push(snapshot());
+        if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+        redoStack.length = 0;
+    }
+
+    function restore(snapshotText) {
+        const state = JSON.parse(snapshotText);
+        friends = state.friends;
+        foodItems = state.foodItems;
+        updateUI();
+    }
+
+    function undo() {
+        if (isReadOnly || !undoStack.length) return;
+        redoStack.push(snapshot());
+        restore(undoStack.pop());
+    }
+
+    function redo() {
+        if (isReadOnly || !redoStack.length) return;
+        undoStack.push(snapshot());
+        restore(redoStack.pop());
+    }
 
     // --- ระบบแชร์ข้อมูลผ่านลิงก์ ---
     function generateShareLink() {
@@ -150,7 +192,7 @@
         // ใช้ Unicode-safe Base64 encoding
         const encodedData = btoa(unescape(encodeURIComponent(data)));
         const shareUrl = window.location.origin + window.location.pathname + "#view=" + encodedData;
-        
+
         navigator.clipboard.writeText(shareUrl).then(() => {
             alert("คัดลอกลิงก์เรียบร้อย! ส่งให้เพื่อนเปิดดูสรุปยอดได้ทันที");
         });
@@ -192,44 +234,58 @@
         reader.onload = (ev) => {
             try {
                 const data = JSON.parse(ev.target.result);
-                friends = data.friends || []; 
-                foodItems = data.foodItems || [];
+                if (!Array.isArray(data.friends) || !Array.isArray(data.foodItems)) throw new Error('Invalid file');
+                recordChange();
+                friends = data.friends;
+                foodItems = data.foodItems;
                 updateUI();
             } catch(err) { alert("ไฟล์ไม่ถูกต้อง"); }
         };
+        if (!e.target.files?.[0]) return;
         reader.readAsText(e.target.files[0]);
+        e.target.value = '';
     }
 
     // --- Logic โปรแกรม ---
     function addFriend() {
         const n = document.getElementById('friendName');
-        if (n.value && !friends.includes(n.value)) { 
-            friends.push(n.value); 
-            n.value = ''; 
-            updateUI(); 
+        if (n.value && !friends.includes(n.value)) {
+            recordChange();
+            friends.push(n.value);
+            n.value = '';
+            updateUI();
         }
     }
 
-    function removeFriend(n) { 
-        if(!isReadOnly && confirm(`ลบชื่อ ${n}?`)) { 
-            friends = friends.filter(f=>f!==n); 
-            foodItems.forEach(i=>i.sharers=i.sharers.filter(s=>s!==n)); 
-            updateUI(); 
-        } 
+    function removeFriend(n) {
+        if(!isReadOnly && confirm(`ลบชื่อ ${n}?`)) {
+            recordChange();
+            friends = friends.filter(f=>f!==n);
+            foodItems.forEach(i=>i.sharers=i.sharers.filter(s=>s!==n));
+            updateUI();
+        }
     }
 
     function addFoodItem() {
         const n = document.getElementById('foodName').value;
         const p = parseFloat(document.getElementById('foodPrice').value);
         const s = Array.from(document.querySelectorAll('.friend-check:checked')).map(c=>c.value);
-        if(n && p && s.length) { 
-            foodItems.push({name:n, price:p, sharers:s}); 
+        if(n && p && s.length) {
+            recordChange();
+            foodItems.push({name:n, price:p, sharers:s});
             document.getElementById('foodName').value = '';
             document.getElementById('foodPrice').value = '';
-            updateUI(); 
+            updateUI();
         } else {
             alert("กรุณากรอกข้อมูลอาหารและเลือกคนหาร");
         }
+    }
+
+    function removeFoodItem(idx) {
+        if (isReadOnly || idx < 0 || idx >= foodItems.length) return;
+        recordChange();
+        foodItems.splice(idx, 1);
+        updateUI();
     }
 
     function updateUI() {
@@ -237,7 +293,7 @@
         const fDisp = document.getElementById('friendListDisplay');
         fDisp.innerHTML = friends.map(f => `
             <div class="friend-tag">
-                ${f} 
+                ${f}
                 ${isReadOnly ? '' : `<span onclick="removeFriend('${f}')" style="cursor:pointer; color:var(--text-muted)">✕</span>`}
             </div>
         `).join('') || '<span style="color:var(--text-muted); font-size:0.8em; margin:auto;">ยังไม่มีชื่อเพื่อน</span>';
@@ -254,7 +310,7 @@
                     <strong>${item.name}</strong> <span style="color:var(--primary)">${item.price.toLocaleString()} ฿</span>
                     <div class="details">คนหาร: ${item.sharers.join(', ')}</div>
                 </div>
-                ${isReadOnly ? '' : `<button class="btn-del" onclick="foodItems.splice(${idx},1);updateUI()">ลบ</button>`}
+                ${isReadOnly ? '' : `<button class="btn-del" onclick="removeFoodItem(${idx})">ลบ</button>`}
             </li>`).join('') || '<li style="justify-content:center; color:var(--text-muted); background:none; border:none;">ยังไม่มีรายการอาหาร</li>';
 
         // คำนวณเงิน
@@ -272,9 +328,10 @@
         document.getElementById('resultList').innerHTML = friends.map(f => `
             <div class="person-row">
                 <span>${f}</span>
-                <span style="color:var(--primary); font-weight:bold">${sum[f].toLocaleString(undefined, {minimumFractionDigits:2})} ฿</span>
+                <span style="color:var(--primary); font-weight:bold">${Math.round(sum[f]).toLocaleString('th-TH', {maximumFractionDigits:0})} ฿</span>
             </div>
         `).join('') || '<p style="text-align:center; color:var(--text-muted);">รอการคำนวณ...</p>';
+        updateHistoryButtons();
     }
 
     // เริ่มการตรวจสอบลิงก์เมื่อเปิดหน้าเว็บ
